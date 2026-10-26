@@ -1,3 +1,9 @@
-.mypy_cache\
-.venv\
+.mypy_cache/
+.venv/
 .vscode\
+.pytest_cache/
+*.py[cod]
+__pycache__/
+.env
+
+learnings.md

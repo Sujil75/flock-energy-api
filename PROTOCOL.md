@@ -1,12 +1,14 @@
 # Flock Energy Portal — Protocol Discoveries
 
+This document records the browser requests and response characteristics observed while inspecting the Flock Energy legacy portal. Findings are limited to requests and values actually observed; unverified behavior is explicitly marked as pending.
+
 ## 1. Browser and Inspection Setup
 
 - **Browser:** Mozilla Firefox
 - **Developer Tools:** Opened using `Ctrl + Shift + I`
-- **Network inspection:** Enabled `Persist Logs` to retain requests during navigation.
+- **Network inspection:** Enabled **Persist Logs** to retain requests during navigation.
 - **Network filter:** Fetch/XHR
-- **Portal URL:** https://urja-ops.flockenergy.tech
+- **Portal URL:** <https://urja-ops.flockenergy.tech>
 - **Authentication:** Logged in using the assignment-provided credentials. Secret values are excluded from this document.
 
 ## 2. Login and Authentication
@@ -47,7 +49,7 @@ Session cookies, passwords, and other authentication secrets must not be committ
 
 ### Discovered Endpoint
 
-- **Page URL:** `https://urja-ops.flockenergy.tech/meters`
+- **Page URL:** <https://urja-ops.flockenergy.tech/meters>
 - **HTTP method:** `GET`
 - **Endpoint path:** `/portal/meters/search`
 - **Observed request:** `/portal/meters/search?q=&page=1`
@@ -57,8 +59,8 @@ Session cookies, passwords, and other authentication secrets must not be committ
 - **HTTP status:** `200 OK`
 - **Response content type:** `application/json`
 - **Authentication:** Request included the session cookie.
-- **Total meters displayed:** 403.
-- **Pagination displayed:** 21 pages.
+- **Total meters displayed:** 403
+- **Pagination displayed:** 21 pages
 
 ### Visible Meter Fields
 
@@ -73,16 +75,16 @@ Session cookies, passwords, and other authentication secrets must not be committ
 
 ### Response Structure
 
-The request returns JSON. The complete response schema, exact field names, and pagination metadata require inspection of the response body.
+The request returns JSON. The **complete response schema, exact JSON field names, and pagination metadata remain pending inspection of the response body**. The visible table fields above describe the UI and should not be assumed to be the exact JSON property names.
 
-The endpoint appears to support searching and pagination through the `q` and `page` query parameters.
+The endpoint appears to support searching and pagination through the `q` and `page` query parameters. The request path and query parameters are confirmed; the response schema and pagination metadata remain pending. The count of 403 meters and 21 pages was observed in the UI and does not by itself establish the API's pagination metadata or page size.
 
 ## 4. Meter Details
 
 ### Example Meter
 
 - **Meter ID:** `J100004`
-- **Page URL:** `https://urja-ops.flockenergy.tech/meters/J100004`
+- **Page URL:** <https://urja-ops.flockenergy.tech/meters/J100004>
 - **Data displayed:** Meter identifier, serial number, manufacturer, phase type, installation status, installation type, geographic coordinates, and consumption history.
 - **Meter ID in page URL:** `J100004`
 
@@ -90,14 +92,14 @@ The endpoint appears to support searching and pagination through the `q` and `pa
 
 | Field | Observed value |
 |---|---|
-| MeterId | `J100004` |
-| SerialNo | `SE65293` |
-| Make | `Genus` |
-| PhaseType | `single` |
-| InstallationStatus | `Faulty` |
-| InstallationType | `CT Operated` |
+| `MeterId` | `J100004` |
+| `SerialNo` | `SE65293` |
+| `Make` | `Genus` |
+| `PhaseType` | `single` |
+| `InstallationStatus` | `Faulty` |
+| `InstallationType` | `CT Operated` |
 
-The exact network request supplying all meter metadata has not yet been conclusively identified.
+The meter metadata is present in the SvelteKit page-data response described in Section 7. The complete mapping from all page fields to the visible UI has not been fully documented.
 
 ## 5. Consumption History
 
@@ -107,7 +109,7 @@ The exact network request supplying all meter metadata has not yet been conclusi
 - **HTTP method:** `GET`
 - **Endpoint pattern:** `/portal/meters/{meter_id}/energy`
 - **Observed request path:** `/portal/meters/J100004/energy`
-- **Observed full URL:** `https://urja-ops.flockenergy.tech/portal/meters/J100004/energy`
+- **Observed full URL:** <https://urja-ops.flockenergy.tech/portal/meters/J100004/energy>
 - **HTTP status:** `200 OK`
 - **Response content type:** `application/json`
 - **Authentication:** The request included the `_secure-better-auth.session_token` cookie.
@@ -145,7 +147,7 @@ The consumption readings are available through a JSON endpoint. Parsing the visi
 - **HTTP method:** `GET`
 - **Endpoint pattern:** `/portal/meters/{meter_id}/geo`
 - **Observed request path:** `/portal/meters/J100004/geo`
-- **Full URL:** `https://urja-ops.flockenergy.tech/portal/meters/J100004/geo`
+- **Full URL:** <https://urja-ops.flockenergy.tech/portal/meters/J100004/geo>
 - **HTTP status:** `200 OK`
 - **Response content type:** `application/json`
 - **Authentication:** The request included the `_secure-better-auth.session_token` cookie.
@@ -169,7 +171,7 @@ The response contains a `data` object with geographic coordinates.
 
 ### Observation
 
-The geographic endpoint is meter-specific, with the meter ID embedded in the request path. The observed response provides coordinates but does not establish whether additional geographic metadata is available elsewhere.
+The geographic endpoint is meter-specific, with the meter ID embedded in the request path. The observed response provides coordinates but does not establish whether additional geographic metadata is available elsewhere. **The endpoint path is confirmed; the complete response schema beyond the observed coordinate fields has not been established.**
 
 ## 7. Meter Metadata — SvelteKit Page Data
 
@@ -183,6 +185,8 @@ The geographic endpoint is meter-specific, with the meter ID embedded in the req
 - **HTTP status:** `200 OK`
 - **Response content type:** `application/json`
 - **Authentication:** Session cookie included in the request.
+
+The path pattern `/meters/{meter_id}/_data.json` was observed for both `J100004` and `J100011`. The example query parameter `x-sveltekit-invalidated=001` is associated with SvelteKit page-data behavior; its necessity for every request has not been verified.
 
 ### Response Structure
 
@@ -202,6 +206,11 @@ The response also contains the electrical network hierarchy, including zone, cir
 ### Verification
 
 The endpoint was inspected for two different meters. The response contained different meter identifiers and metadata corresponding to the selected meter.
+
+| Meter ID | Serial number | Make | Phase | Installation status | Installation type |
+|---|---|---|---|---|---|
+| `J100004` | `SE65293` | `Genus` | `single` | `Faulty` | `CT Operated` |
+| `J100011` | `SE48422` | `HPL` | `three` | `Decommissioned` | `Whole Current` |
 
 This confirms that the page-data response is meter-specific.
 
@@ -243,32 +252,33 @@ This confirms that the page-data response is meter-specific.
 ## 9. Network Inspection Summary
 
 | Request | Status | Response type | Finding |
-|---|---|---|---|
-| `/portal/meters/search?q=&page=1` | 200 | JSON | Meter listing |
-| `/portal/meters/J100004/energy` | 200 | JSON | Consumption history |
-| `geo` | 200 | JSON | Geographic data, including coordinates |
-| `_data.json?...` | 200 | JSON | Page-related data; exact role pending verification |
+|---|---:|---|---|
+| `/portal/meters/search?q=&page=1` | `200` | JSON | Meter listing; complete response schema and pagination metadata remain pending inspection. |
+| `/meters/{meter_id}/_data.json?x-sveltekit-invalidated=001` | `200` | JSON | SvelteKit page data containing meter metadata and network hierarchy; path pattern verified for two meters. |
+| `/portal/meters/{meter_id}/geo` | `200` | JSON | Geographic data, including coordinates; exact path pattern confirmed. |
+| `/portal/meters/{meter_id}/energy` | `200` | JSON | Consumption history. |
 
-The paths for `geo` and `_data.json` must be recorded from their respective request headers before they are used in the implementation.
+The `geo` path `/portal/meters/{meter_id}/geo` and the `_data.json` path pattern `/meters/{meter_id}/_data.json` are confirmed. The `_data.json` endpoint is framework-specific page data, so its long-term stability and suitability for adapter use remain to be evaluated. The complete meter-listing response schema and pagination metadata have not yet been recorded.
 
 ## 10. Observations, Limitations, and Implementation Implications
 
 ### Confirmed Findings
 
 - The portal supports browser-based authentication.
-- The login request uses HTTP POST and includes username and password fields.
+- The login request uses HTTP `POST` and includes username and password fields.
 - An authenticated session cookie is used in subsequent requests.
 - Meter listing data is retrieved through a JSON request with search and pagination parameters.
 - Consumption history is retrieved through a meter-specific JSON endpoint.
-- Geographic data is available through a background JSON request.
+- Geographic data is available through the meter-specific `/portal/meters/{meter_id}/geo` endpoint.
+- Meter metadata is present in the meter-specific SvelteKit page-data endpoint `/meters/{meter_id}/_data.json`.
 - The meter detail page triggers multiple background JSON requests.
 
 ### Outstanding Investigation
 
 - Exact login content type and payload field names.
 - Complete meter-listing response schema and pagination metadata.
-- Exact paths and schemas for `geo` and `_data.json`.
-- Source of the meter detail metadata.
+- Complete response schemas for geographic data and SvelteKit page data, beyond the fields observed.
+- Full mapping between the SvelteKit page-data structure and all meter details displayed in the UI.
 - Session expiration and automatic re-authentication behavior.
 - Date-range filtering and pagination support for consumption history.
 - Stability and authorized programmatic use of the observed endpoints.
@@ -279,4 +289,4 @@ The adapter should separate session management, HTTP requests, response parsing,
 
 It should expose consistent JSON responses, validate data, handle missing meters and malformed responses, and recover safely from expired authentication.
 
-All implementation decisions should be based on observed protocol behavior rather than assumed endpoint structures.
+All implementation decisions should be based on observed protocol behavior rather than assumed endpoint structures. Keep unverified behavior clearly marked until confirmed through further inspection or testing.
