@@ -5,5 +5,7 @@
 *.py[cod]
 __pycache__/
 .env
+_pycache_/
 
 learnings.md
+check_client.py

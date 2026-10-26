@@ -18,9 +18,6 @@ class LegacyPortalClient:
     def login(self) -> None:
         login_url = f"{self.base_url}/login"
 
-        response = self.session.get(login_url, timeout=15)
-        response.raise_for_status()
-
         response = self.session.post(
             login_url,
             data={
@@ -30,6 +27,14 @@ class LegacyPortalClient:
             timeout=15,
         )
         response.raise_for_status()
+
+        result = response.json()
+
+        if result.get("type") != "redirect" or not result.get("location"):
+            raise RuntimeError("Portal login did not return the expected redirect")
+
+        if not self.session.cookies.get("_secure-better-auth.session_token"):
+            raise RuntimeError("Login did not establish a session cookie")
 
         self.authenticated = True
 
