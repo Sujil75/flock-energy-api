@@ -4,10 +4,10 @@ from app.clients.legacy_client import LegacyPortalClient
 
 @pytest.fixture
 def client():
-    with patch("app.clients.legacy_client.settings") as check_settings:
-        check_settings.portal_base_url = "https://urja-ops.flockenergy.tech"
-        check_settings.portal_username = "test-user"
-        check_settings.portal_password = "test-password"
+    with patch("app.clients.legacy_client.settings") as mock_settings:
+        mock_settings.portal_base_url = "https://urja-ops.flockenergy.tech"
+        mock_settings.portal_username = "test-user"
+        mock_settings.portal_password = "test-password"
 
         instance = LegacyPortalClient()
         yield instance
@@ -26,55 +26,74 @@ def test_meter_id_validation(client):
 
 
 def test_meter_energy_uses_expected_path(client):
-    with patch.object(client, "get_data", return_value={"data": []}) as check_get:
+    with patch.object(client, "get_data", return_value={"data": []}) as mock_get:
         client.get_meter_energy("J100004")
 
-    check_get.assert_called_once_with("/portal/meters/J100004/energy")
+    mock_get.assert_called_once_with("/portal/meters/J100004/energy")
 
 
 def test_meter_location_uses_expected_path(client):
-    with patch.object(client, "get_data", return_value={"data": {}}) as check_get:
+    with patch.object(client, "get_data", return_value={"data": {}}) as mock_get:
         client.get_meter_location("J100004")
 
-    check_get.assert_called_once_with("/portal/meters/J100004/geo")      
+    mock_get.assert_called_once_with("/portal/meters/J100004/geo")      
+
+
 
 def test_login_accepts_redirect_response(client):
-    mock_response = Mock()
-    mock_response.raise_for_status.return_value = None
-    mock_response.json.return_value = {
-        "type": "redirect",
-        "status": 303,
-        "location": "/meters",
-    }
+    mock_get_response = Mock()
+    mock_get_response.status_code = 200
+    mock_get_response.url = "https://urja-ops.flockenergy.tech/login"
+    mock_get_response.raise_for_status.return_value = None
 
-    client.session.cookies.set(
-        "_secure-better-auth.session_token",
-        "test-session-token",
+    mock_post_response = Mock()
+    mock_post_response.raise_for_status.return_value = None
+    mock_post_response.headers = {"content-type": "application/json"}
+    mock_post_response.text = (
+        '{"type":"redirect","status":303,"location":"/meters"}'
     )
 
     with patch.object(
         client.session,
+        "get",
+        return_value=mock_get_response,
+    ), patch.object(
+        client.session,
         "post",
-        return_value=mock_response,
+        return_value=mock_post_response,
     ) as mock_post:
+        client.session.cookies.set(
+            "__Secure-better-auth.session_token",
+            "test-session-token",
+        )
+
         client.login()
 
     mock_post.assert_called_once()
     assert client.authenticated is True
 
+
 def test_login_does_not_mark_authenticated_without_cookie(client):
-    mock_response = Mock()
-    mock_response.raise_for_status.return_value = None
-    mock_response.json.return_value = {
-        "type": "redirect",
-        "status": 303,
-        "location": "/meters",
-    }
+    mock_get_response = Mock()
+    mock_get_response.status_code = 200
+    mock_get_response.url = "https://urja-ops.flockenergy.tech/login"
+    mock_get_response.raise_for_status.return_value = None
+
+    mock_post_response = Mock()
+    mock_post_response.raise_for_status.return_value = None
+    mock_post_response.headers = {"content-type": "application/json"}
+    mock_post_response.text = (
+        '{"type":"redirect","status":303,"location":"/meters"}'
+    )
 
     with patch.object(
         client.session,
+        "get",
+        return_value=mock_get_response,
+    ), patch.object(
+        client.session,
         "post",
-        return_value=mock_response,
+        return_value=mock_post_response,
     ):
         with pytest.raises(RuntimeError, match="session cookie"):
             client.login()

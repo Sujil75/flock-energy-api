@@ -19,16 +19,17 @@ def normalize_meter_list_item(item: dict[str, Any]) -> MeterResponse:
     )
 
 
+
 def normalize_meter_details(payload: dict[str, Any]) -> dict[str, Any]:
-    data = payload.get("data", [])
-
-    if len(data) < 4:
-        raise ValueError("Unexpected meter details response structure")
-
     try:
-        installed_meter = json.loads(data[3]).get("installed_meter", {})
-    except (TypeError, json.JSONDecodeError) as exc:
-        raise ValueError("Unable to parse meter details") from exc
+        data = payload["nodes"][2]["data"]
+
+        installed_meter = json.loads(data[3])["installed_meter"]
+
+    except (KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
+        raise ValueError(
+            "Unexpected meter details response structure"
+        ) from exc
 
     return {
         "meter_id": installed_meter.get("MeterId", data[1]),

@@ -10,6 +10,7 @@ from app.schemas.normalizers import (
     normalize_meter_details,
     normalize_meter_list_item,
 )
+from app.schemas.meters import MeterDetailsResponse
 
 router = APIRouter(prefix="/api/v1/meters", tags=["Meters"])
 
@@ -44,14 +45,19 @@ def list_meters(
         ) from exc
 
 
-@router.get("/{meter_id}")
-def get_meter_details(meter_id: str) -> dict[str, Any]:
+@router.get("/{meter_id}", response_model=MeterDetailsResponse)
+def get_meter_details(meter_id: str) -> dict:
     try:
-        client = get_client()
+        client = LegacyPortalClient()
         result = client.get_meter_details(meter_id)
         return normalize_meter_details(result)
+
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        ) from exc
+
     except Exception as exc:
         raise HTTPException(
             status_code=502,

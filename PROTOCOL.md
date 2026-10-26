@@ -1,299 +1,265 @@
 # Flock Energy Portal — Protocol Discoveries
-This document records the browser requests and response characteristics observed while inspecting the Flock Energy legacy portal. Findings are limited to requests and values actually observed; unverified behavior is explicitly marked as pending.
 
-## 1. Browser and Inspection Setup
+This document records the upstream behavior observed while inspecting and testing the Flock Energy legacy portal. It distinguishes confirmed observations from behavior that remains unverified.
 
-- **Browser:** Mozilla Firefox
-- **Developer Tools:** Opened using `Ctrl + Shift + I`
-- **Network inspection:** Enabled `Persist Logs` to retain requests during navigation.
-- **Network filter:** Fetch/XHR
-- **Portal URL:** https://urja-ops.flockenergy.tech
-- **Authentication:** Logged in using the assignment-provided credentials. Secret values are excluded from this document.
+## 1. Portal and inspection
 
-## 2. Login and Authentication
+- **Portal:** `https://urja-ops.flockenergy.tech`
+- **Browser used for inspection:** Mozilla Firefox
+- **Inspection tools:** Browser Developer Tools, Network tab, Fetch/XHR filtering, and persisted network logs.
+- **Authentication:** The portal requires login for the requests used by this adapter. Credentials and session-cookie values are intentionally excluded from this document.
 
-### Login Request
+## 2. Authentication and session handling
 
-- **Login page:** `/login`
-- **HTTP method:** `POST`
-- **Request payload:** Username and password fields.
-- **Content type:** Pending verification from the request headers.
-- **Authentication result:** Successfully logged in to the portal.
+### Login request
 
-### Login Payload and CSRF Inspection
+- **Page and request path:** `/login`
+- **Method:** `POST`
+- **Payload fields used by the adapter:** `email` and `password`
+- **Request headers used by the adapter:** `Origin` and `Referer`
+- **Transport status observed on successful login:** `200 OK`
+- **Successful JSON response observed:**
 
-| Item | Observation |
-|---|---|
-| Username field | Present in the request payload |
-| Password field | Present in the request payload |
-| CSRF token field | Not observed |
-| CSRF-related request header | Not observed |
-| Session cookie | Observed |
-| Session cookie name | `_secure-better-auth.session_token` |
+```json
+{
+  "type": "redirect",
+  "status": 303,
+  "location": "/meters"
+}
+```
 
-No explicit CSRF token field or related request header was identified during inspection. This does not establish that the portal lacks CSRF protection.
+The `status` value above is part of the JSON response. It is not the HTTP status code; the observed HTTP response status was `200`.
 
-### Session Management
+### Failed login response observed
 
-The authenticated consumption request included the `_secure-better-auth.session_token` cookie in its `Cookie` request header.
+A failed login returned HTTP `200` with a JSON body containing:
 
-- **Cookie creation:** The login response's `Set-Cookie` header requires verification.
-- **Session expiration:** Not yet tested.
-- **Cookie refresh or replacement:** Not yet verified.
-- **Automatic re-authentication:** Required for the adapter and pending implementation.
+```json
+{
+  "type": "failure",
+  "status": 401,
+  "data": "[{\"email\":1,\"error\":2},\"\",\"Invalid email or password.\"]"
+}
+```
 
-Session cookies, passwords, and other authentication secrets must not be committed to the repository or exposed in logs or API responses.
+The `401` here is the JSON response's `status` field, not the HTTP response status. The adapter must inspect the JSON result as well as the HTTP status to determine whether login succeeded.
 
-## 3. Meter Listing
+### Session cookie
 
-### Discovered Endpoint
+- **Observed cookie name:** `__Secure-better-auth.session_token`
+- The `requests.Session` object retains cookies between the login request and subsequent upstream requests.
+- The adapter checks for the expected cookie before marking the client as authenticated.
+- Cookie values, passwords, and other authentication secrets must not be committed, printed, or returned by the API.
 
-- **Page URL:** `https://urja-ops.flockenergy.tech/meters`
-- **HTTP method:** `GET`
-- **Endpoint path:** `/portal/meters/search`
+### Security and remaining uncertainty
+
+- No explicit CSRF field or CSRF-related request header was identified in the inspected login request. This does not prove that the portal has no CSRF protection.
+- Session expiration, cookie refresh, and the portal's exact session lifetime have not been tested.
+- Re-authentication after an upstream session expires has not been verified.
+- A successful login response and presence of a cookie do not independently prove that the cookie will authorize every endpoint; upstream requests must still handle authorization failures.
+
+## 3. Meter listing
+
+- **Portal page:** `/meters`
+- **Upstream endpoint:** `GET /portal/meters/search`
 - **Observed request:** `/portal/meters/search?q=&page=1`
-- **Observed query parameters:**
-  - `q`: Search query; observed as empty.
-  - `page`: Page number; observed as `1`.
-- **HTTP status:** `200 OK`
-- **Response content type:** `application/json`
-- **Authentication:** Request included the session cookie.
-- **Total meters displayed:** 403.
-- **Pagination displayed:** 21 pages.
+- **Query parameters:**
+  - `q`: search string; observed as empty.
+  - `page`: page number; observed as `1`.
+- **Observed HTTP status:** `200 OK`
+- **Observed content type:** `application/json`
+- **Authentication:** The browser request included the session cookie.
+- **UI observation:** 403 meters and 21 pages were displayed at the time of inspection. These are observations from that session, not guaranteed totals.
 
-### Visible Meter Fields
+### Observed meter-list item
 
-| Field | Description |
+```json
+{
+  "meterId": "J100000",
+  "serialNo": "SE33962",
+  "make": "HPL",
+  "phaseType": "single",
+  "installStatus": "Decommissioned",
+  "dtCode": "DT-001"
+}
+```
+
+The adapter normalizes these fields to `meter_id`, `serial_number`, `make`, `phase_type`, `installation_status`, and `dt_code`.
+
+**Response-envelope limitation:** The supplied observation establishes the item fields but does not fully document every possible response envelope or the upstream pagination metadata. The adapter currently supports a direct list or an object with a `data` list. That assumption should be revisited if the portal response format changes.
+
+## 4. Meter details — SvelteKit page data
+
+### Endpoint confirmed by browser request
+
+- **Method:** `GET`
+- **Path pattern:** `/meters/{meter_id}/__data.json`
+- **Observed request:** `/meters/J100004/__data.json?x-sveltekit-invalidated=001`
+- **Observed content type:** `application/json`
+- **Authentication:** The browser request included the session cookie.
+- **Referer observed in the copied request:** `https://urja-ops.flockenergy.tech/meters`
+
+**Important:** The working filename has two leading underscores: `__data.json`. The earlier `_data.json` path (one leading underscore) returned `404` when requested by the adapter.
+
+### Observed response shape
+
+The response is a SvelteKit page-data object containing a `type` field and a `nodes` array. For the observed meter, the relevant data was located at `nodes[2]["data"]`. Within that array, index `3` held a JSON-encoded string with the installed-meter fields.
+
+A shortened representation of the relevant structure:
+
+```json
+{
+  "type": "data",
+  "nodes": [
+    {"type": "skip"},
+    {"type": "skip"},
+    {
+      "type": "data",
+      "data": [
+        {"meterId": 1, "detail": 2, "hierarchy": 4},
+        "J100004",
+        {"classData": 3},
+        "{\"installed_meter\":{\"MeterId\":\"J100004\",\"SerialNo\":\"SE65293\",\"Make\":\"Genus\",\"PhaseType\":\"single\",\"InstallationStatus\":\"Faulty\",\"InstallationType\":\"CT Operated\"}}"
+      ],
+      "uses": {"params": ["id"]}
+    }
+  ]
+}
+```
+
+The full observed data array also included hierarchy values:
+
+- Zone: `Jaipur Zone 2 (Z-02)`
+- Circle: `Circle 5 (C-05)`
+- Division: `Division 5 (D-05)`
+- Subdivision: `Subdivision 5 (SD-05)`
+- Substation: `Substation 5 (SS-05)`
+- Feeder: `Feeder 5 (F-005)`
+- Distribution transformer: `Bani Park DT 5 (DT-005)`
+
+### Observed meter metadata
+
+| Upstream field | Observed value |
 |---|---|
-| Meter | Meter identifier |
-| Serial | Meter serial number |
-| Make | Manufacturer |
-| Phase | Phase type |
-| Status | Installation status |
-| DT | Associated distribution transformer |
+| `MeterId` | `J100004` |
+| `SerialNo` | `SE65293` |
+| `Make` | `Genus` |
+| `PhaseType` | `single` |
+| `InstallationStatus` | `Faulty` |
+| `InstallationType` | `CT Operated` |
 
-### Response Structure
+The adapter extracts these values and returns normalized fields: `meter_id`, `serial_number`, `make`, `phase_type`, `installation_status`, `installation_type`, and a normalized `hierarchy` object.
 
-The request returns JSON. The complete response schema, exact field names, and pagination metadata require inspection of the response body.
+### Implementation caveat
 
-The endpoint appears to support searching and pagination through the `q` and `page` query parameters.
+The `nodes[2]["data"]` and numeric-index mapping reflects the response observed during inspection. SvelteKit page-data structures are framework-specific and may change. The adapter should fail clearly on unexpected structures rather than silently returning incorrect fields.
 
-## 4. Meter Details
+## 5. Consumption history
 
-### Example Meter
-
-- **Meter ID:** `J100004`
-- **Page URL:** `https://urja-ops.flockenergy.tech/meters/J100004`
-- **Data displayed:** Meter identifier, serial number, manufacturer, phase type, installation status, installation type, geographic coordinates, and consumption history.
-- **Meter ID in page URL:** `J100004`
-
-### Observed Meter Metadata
-
-| Field | Observed value |
-|---|---|
-| MeterId | `J100004` |
-| SerialNo | `SE65293` |
-| Make | `Genus` |
-| PhaseType | `single` |
-| InstallationStatus | `Faulty` |
-| InstallationType | `CT Operated` |
-
-The exact network request supplying all meter metadata has not yet been conclusively identified.
-
-## 5. Consumption History
-
-### Discovered Endpoint
-
-- **Host:** `urja-ops.flockenergy.tech`
-- **HTTP method:** `GET`
+- **Method:** `GET`
 - **Endpoint pattern:** `/portal/meters/{meter_id}/energy`
-- **Observed request path:** `/portal/meters/J100004/energy`
-- **Observed full URL:** `https://urja-ops.flockenergy.tech/portal/meters/J100004/energy`
-- **HTTP status:** `200 OK`
-- **Response content type:** `application/json`
-- **Authentication:** The request included the `_secure-better-auth.session_token` cookie.
+- **Observed request:** `/portal/meters/J100004/energy`
+- **Observed HTTP status:** `200 OK`
+- **Observed content type:** `application/json`
+- **Authentication:** The request included the session cookie.
 
-### Response Structure
+The response contains a `data` array of readings. An observed reading was:
 
-The response contains a JSON `data` array with consumption readings.
+```json
+{
+  "timestamp": "23/06/2026 23:30",
+  "kwh": "20403.4",
+  "kvah": "22035.67",
+  "volt": "239"
+}
+```
 
-| Field | Description | Observed example |
-|---|---|---|
-| `timestamp` | Date and time of the reading | `"23/06/2026 23:30"` |
-| `kwh` | Energy reading in kilowatt-hours | `"20403.4"` |
-| `kvah` | Apparent energy reading in kilovolt-ampere-hours | `"22035.67"` |
-| `volt` | Voltage reading | `"239"` |
+### Normalization
 
-The observed measurement values are strings, so the adapter must validate and convert them to appropriate numeric types.
+The adapter converts valid numeric strings to numeric values:
 
-### Data Normalization Requirements
+- `kwh` → floating-point number
+- `kvah` → floating-point number
+- `volt` → floating-point number
 
-- Convert valid numeric measurement strings into numeric values.
-- Parse timestamps into a consistent datetime representation.
-- Verify the timestamp timezone before assigning timezone information.
-- Handle missing, malformed, and inconsistent values.
-- Investigate support for date-range filtering and pagination.
-- Preserve the original response when necessary for debugging, without logging sensitive information.
+The timestamp is currently retained as a string in the format observed from the portal. Its timezone and date-format stability have not been verified. Date-range filtering and upstream pagination have not been confirmed.
 
-### HTML Parsing
+The endpoint supplies JSON, so HTML table parsing is not required for these readings while this endpoint remains available.
 
-The consumption readings are available through a JSON endpoint. Parsing the visible consumption table is unnecessary if the endpoint remains accessible and supplies all required fields.
+## 6. Geographic data
 
-## 6. Geographic Data (`geo`)
-
-### Discovered Endpoint
-
-- **HTTP method:** `GET`
+- **Method:** `GET`
 - **Endpoint pattern:** `/portal/meters/{meter_id}/geo`
-- **Observed request path:** `/portal/meters/J100004/geo`
-- **Full URL:** `https://urja-ops.flockenergy.tech/portal/meters/J100004/geo`
-- **HTTP status:** `200 OK`
-- **Response content type:** `application/json`
-- **Authentication:** The request included the `_secure-better-auth.session_token` cookie.
+- **Observed request:** `/portal/meters/J100004/geo`
+- **Observed HTTP status:** `200 OK`
+- **Observed content type:** `application/json`
+- **Authentication:** The request included the session cookie.
 
-### Response Structure
+The response contains a `data` object. Observed values:
 
-The response contains a `data` object with geographic coordinates.
+```json
+{
+  "data": {
+    "latitude": "26.907425164505934",
+    "longitude": "75.72503661059095"
+  }
+}
+```
 
-| Field | Description | Observed value |
+The adapter converts latitude and longitude strings to numeric values. Additional geographic metadata has not been established by the observed response.
+
+## 7. Adapter API and data flow
+
+The adapter exposes these routes:
+
+| Method | Adapter endpoint | Purpose |
 |---|---|---|
-| `latitude` | Geographic latitude | `"26.907425164505934"` |
-| `longitude` | Geographic longitude | `"75.72503661059095"` |
+| `GET` | `/health` | Health check |
+| `GET` | `/api/v1/meters?q=&page=1` | Search/list meters |
+| `GET` | `/api/v1/meters/{meter_id}` | Normalized meter details and hierarchy |
+| `GET` | `/api/v1/meters/{meter_id}/energy` | Normalized energy readings |
+| `GET` | `/api/v1/meters/{meter_id}/location` | Normalized coordinates |
 
-### Adapter Requirements
+The implementation separates responsibilities:
 
-- Parse the JSON response.
-- Validate latitude and longitude.
-- Convert valid coordinate strings to numeric values.
-- Handle missing or malformed coordinates.
-- Associate the response with the requested meter ID.
+1. `app/clients/legacy_client.py` handles login, session cookies, and upstream HTTP requests.
+2. `app/schemas/normalizers.py` extracts and normalizes upstream response fields.
+3. `app/schemas/meters.py` defines Pydantic schemas for the adapter's normalized response contracts.
+4. `app/api/meters.py` exposes the REST endpoints and maps errors to HTTP responses.
 
-### Observation
+The adapter does not currently persist upstream meter data in a database.
 
-The geographic endpoint is meter-specific, with the meter ID embedded in the request path. The observed response provides coordinates but does not establish whether additional geographic metadata is available elsewhere.
+## 8. Error handling and limitations
 
-## 7. Meter Metadata — SvelteKit Page Data
+- Adapter-side invalid meter identifiers are intended to produce HTTP `400`.
+- Invalid query parameters such as a page number below `1` are rejected by FastAPI with HTTP `422`.
+- Upstream failures are generally translated to HTTP `502` by route handlers.
+- The upstream portal's HTTP `401`, `403`, and `404` responses have been observed during development in different circumstances. A `404` occurred when the adapter used `_data.json`; the browser's working request used `__data.json`.
+- The exact upstream status and response body should be captured safely in diagnostics during development, without exposing credentials or cookie values.
+- The current login check verifies the expected cookie exists after a successful-looking response. It does not independently verify that the session remains authorized for every subsequent request.
+- Meter-detail normalization depends on the observed SvelteKit response structure.
+- The full upstream pagination envelope for meter listing has not been fully documented.
+- Session expiry, automatic re-login, date-range filtering, and long-term endpoint stability remain unverified.
 
-### Discovered Endpoint
+## 9. Security requirements
 
-- **HTTP method:** `GET`
-- **Endpoint pattern:** `/meters/{meter_id}/_data.json`
-- **First observed meter:** `J100004`
-- **Second observed meter:** `J100011`
-- **Example request:** `/meters/J100011/_data.json?x-sveltekit-invalidated=001`
-- **HTTP status:** `200 OK`
-- **Response content type:** `application/json`
-- **Authentication:** Session cookie included in the request.
+- Store portal credentials in environment variables; do not hardcode them.
+- Keep `.env` out of version control.
+- Never log or return passwords, cookie values, or session tokens.
+- Use HTTPS for upstream requests.
+- Validate path parameters and query parameters.
+- Do not expose the upstream session cookie to API consumers.
+- Only expose meter data to callers authorized by the deployment's access-control policy. The current adapter's portal authentication is upstream authentication and does not, by itself, authenticate API consumers.
 
-### Response Structure
+## 10. Verification summary
 
-The response contains a `type` field and a `nodes` array. A relevant node contains a nested `data` object with the selected meter's metadata.
+| Upstream request | Observed result | Confirmed finding |
+|---|---|---|
+| `GET /portal/meters/search?q=&page=1` | `200` | JSON meter listing; item field names observed |
+| `GET /portal/meters/J100004/energy` | `200` | JSON energy readings |
+| `GET /portal/meters/J100004/geo` | `200` | JSON coordinates |
+| `GET /meters/J100004/__data.json?x-sveltekit-invalidated=001` | `200` | SvelteKit page data containing meter metadata and hierarchy |
+| `POST /login` with valid credentials | HTTP `200`, JSON redirect result | Session cookie `__Secure-better-auth.session_token` observed |
+| `POST /login` with invalid credentials | HTTP `200`, JSON failure result with embedded status `401` | Login success must be determined from the JSON result, not HTTP status alone |
 
-Observed fields include:
-
-- `MeterId`
-- `SerialNo`
-- `Make`
-- `PhaseType`
-- `InstallationStatus`
-- `InstallationType`
-
-The response also contains the electrical network hierarchy, including zone, circle, division, subdivision, substation, feeder, and distribution transformer.
-
-### Verification
-
-The endpoint was inspected for two different meters. The response contained different meter identifiers and metadata corresponding to the selected meter.
-
-This confirms that the page-data response is meter-specific.
-
-### Implementation Considerations
-
-- Treat this as a SvelteKit page-data endpoint, not necessarily a stable public REST API.
-- Verify whether its response structure is suitable for programmatic use.
-- Extract only the required fields and normalize them into the adapter's own response schema.
-- Do not rely on the framework-specific query parameter as a business-level meter identifier.
-- Preserve session cookies securely when making authenticated requests.
-
-## 8. Session Behavior and Security
-
-### Confirmed Observations
-
-- The portal requires authentication to access the pages inspected.
-- The `_secure-better-auth.session_token` cookie was observed in an authenticated consumption request.
-- The cookie value must remain confidential.
-- No explicit CSRF token field or related request header was identified during login inspection.
-
-### Pending Verification
-
-- Whether the login response explicitly sets or updates the session cookie.
-- Session expiration and re-authentication behavior.
-- Responses to expired or invalid sessions.
-- Whether all observed endpoints require the same authentication mechanism.
-- Whether additional CSRF protections are implemented.
-
-### Adapter Security Requirements
-
-- Keep portal credentials and session cookies server-side.
-- Never expose upstream session cookies through the REST API.
-- Use HTTPS for upstream and client communication.
-- Avoid logging passwords, cookie values, or other sensitive authentication material.
-- Detect authentication failures and re-authenticate when appropriate.
-- Validate meter identifiers and handle upstream errors safely.
-- Avoid exposing meter data to unauthorized API consumers.
-
-## 9. Network Inspection Summary
-
-| Request | Status | Response type | Finding |
-|---|---|---|---|
-| `/portal/meters/search?q=&page=1` | 200 | JSON | Meter listing |
-| `/portal/meters/J100004/energy` | 200 | JSON | Consumption history |
-| `geo` | 200 | JSON | Geographic data, including coordinates |
-| `_data.json?...` | 200 | JSON | Page-related data; exact role pending verification |
-
-The paths for `geo` and `_data.json` must be recorded from their respective request headers before they are used in the implementation.
-
-## 10. Observations, Limitations, and Implementation Implications
-
-### Confirmed Findings
-
-- The portal supports browser-based authentication.
-- The login request uses HTTP POST and includes username and password fields.
-- An authenticated session cookie is used in subsequent requests.
-- Meter listing data is retrieved through a JSON request with search and pagination parameters.
-- Consumption history is retrieved through a meter-specific JSON endpoint.
-- Geographic data is available through a background JSON request.
-- The meter detail page triggers multiple background JSON requests.
-
-### Outstanding Investigation
-
-- Exact login content type and payload field names.
-- Complete meter-listing response schema and pagination metadata.
-- Exact paths and schemas for `geo` and `_data.json`.
-- Source of the meter detail metadata.
-- Session expiration and automatic re-authentication behavior.
-- Date-range filtering and pagination support for consumption history.
-- Stability and authorized programmatic use of the observed endpoints.
-
-### Implementation Implications
-
-The adapter should separate session management, HTTP requests, response parsing, data normalization, and REST API routes.
-
-It should expose consistent JSON responses, validate data, handle missing meters and malformed responses, and recover safely from expired authentication.
-
-All implementation decisions should be based on observed protocol behavior rather than assumed endpoint structures.tes.
-
-It should expose consistent JSON responses, validate data, handle missing meters and malformed responses, and recover safely from expired authentication.
-
-All implementation decisions should be based on observed protocol behavior rather than assumed endpoint structures.tes.
-
-It should expose consistent JSON responses, validate data, handle missing meters and malformed responses, and recover safely from expired authentication.
-
-All implementation decisions should be based on observed protocol behavior rather than assumed endpoint structures.tes.
-
-It should expose consistent JSON responses, validate data, handle missing meters and malformed responses, and recover safely from expired authentication.
-
-All implementation decisions should be based on observed protocol behavior rather than assumed endpoint structures.tes.
-
-It should expose consistent JSON responses, validate data, handle missing meters and malformed responses, and recover safely from expired authentication.
-
-All implementation decisions should be based on observed protocol behavior rather than assumed endpoint structures.
+These findings reflect the observed portal behavior during this project. They are not a guarantee that undocumented internal endpoints will remain stable.
