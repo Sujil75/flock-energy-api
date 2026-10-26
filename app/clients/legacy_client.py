@@ -71,10 +71,12 @@ class LegacyPortalClient:
     def get_meter_details(self, meter_id: str) -> dict | list:
         meter_id = self._validate_meter_id(meter_id)
 
-        return self.get_data(
+        payload = self.get_data(
             f"/meters/{meter_id}/__data.json?x-sveltekit-invalidated=001",
             headers={"Referer": f"{self.base_url}/meters"},
         )
+
+        return payload
 
     def get_meter_energy(self, meter_id: str) -> dict | list:
         meter_id = self._validate_meter_id(meter_id)
