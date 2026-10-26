@@ -6,6 +6,3 @@
 __pycache__/
 .env
 _pycache_/
-
-learnings.md
-check_client.py
